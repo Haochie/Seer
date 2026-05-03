@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BMS Tactical Map</title>
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        /* Forces the map to use a tactical dark aesthetic */
+        .leaflet-layer,
+        .leaflet-control-zoom-in,
+        .leaflet-control-zoom-out,
+        .leaflet-control-attribution {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+        /* Prevents pull-to-refresh on mobile which ruins map panning */
+        body { overscroll-behavior-y: contain; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col font-sans overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 p-3 shadow-md flex justify-between items-center border-b border-gray-700">
+        <div class="flex items-center space-x-2">
+            <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+            <h1 class="text-lg font-bold tracking-wider text-gray-100">BMS <span class="text-xs font-normal text-gray-400">| LIVE</span></h1>
+        </div>
+        <div class="flex space-x-2 text-xs">
+            <span class="bg-gray-700 px-2 py-1 rounded-md" id="clock">0000 hrs</span>
+        </div>
+    </header>
+
+    <!-- Map Container -->
+    <main class="flex-1 relative w-full h-full">
+        <div id="map" class="w-full h-full z-0"></div>
+        
+        <!-- Map Overlay Legend (Mobile Friendly) -->
+        <div class="absolute bottom-4 right-4 z-10 bg-gray-800/90 p-2 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm">
+            <div class="flex flex-col space-y-1 text-xs">
+                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span> Platoon</div>
+                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Safety</div>
+                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span> Conducting</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Initialise Telegram Web App features
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Expands the Mini App to take up the whole screen
+
+        // Set tactical clock
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('en-GB', { hour12: false }) + ' hrs';
+        }, 1000);
+
+        // Initialize Map (Centred around a generic Singapore training area)
+        const map = L.map('map').setView([1.3521, 103.8198], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Mock Data - To be replaced by Firebase in Phase 5
+        const activeUnits = [
+            { id: 'plt-1', name: 'Plt 1', role: 'troop', lat: 1.3540, lng: 103.8200, color: 'blue' },
+            { id: 'so-1', name: 'Safety Officer', role: 'safety', lat: 1.3525, lng: 103.8180, color: 'green' }
+        ];
+
+        const createIcon = (color) => {
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7]
+            });
+        };
+
+        activeUnits.forEach(unit => {
+            const mappedColor = unit.role === 'safety' ? '#22c55e' : (unit.role === 'conducting' ? '#eab308' : '#3b82f6');
+            L.marker([unit.lat, unit.lng], { icon: createIcon(mappedColor) })
+                .addTo(map)
+                .bindPopup(`<b>${unit.name}</b>`);
+        });
+
+    </script>
+</body>
+</html>
