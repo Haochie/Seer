@@ -10,20 +10,14 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        /* Forces the map to use a tactical dark aesthetic */
-        .leaflet-layer,
-        .leaflet-control-zoom-in,
-        .leaflet-control-zoom-out,
-        .leaflet-control-attribution {
+        .leaflet-layer, .leaflet-control-zoom-in, .leaflet-control-zoom-out, .leaflet-control-attribution {
             filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
         }
-        /* Prevents pull-to-refresh on mobile which ruins map panning */
         body { overscroll-behavior-y: contain; }
     </style>
 </head>
 <body class="bg-gray-900 text-white h-screen flex flex-col font-sans overflow-hidden">
 
-    <!-- Header -->
     <header class="bg-gray-800 p-3 shadow-md flex justify-between items-center border-b border-gray-700">
         <div class="flex items-center space-x-2">
             <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
@@ -34,11 +28,9 @@
         </div>
     </header>
 
-    <!-- Map Container -->
     <main class="flex-1 relative w-full h-full">
         <div id="map" class="w-full h-full z-0"></div>
         
-        <!-- Map Overlay Legend (Mobile Friendly) -->
         <div class="absolute bottom-4 right-4 z-10 bg-gray-800/90 p-2 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm">
             <div class="flex flex-col space-y-1 text-xs">
                 <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span> Platoon</div>
@@ -48,7 +40,7 @@
         </div>
     </main>
 
-    <script>
+    <script type="module">
         // Initialise Telegram Web App features
         const tg = window.Telegram.WebApp;
         tg.expand(); // Expands the Mini App to take up the whole screen
@@ -67,11 +59,26 @@
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // Mock Data - To be replaced by Firebase in Phase 5
-        const activeUnits = [
-            { id: 'plt-1', name: 'Plt 1', role: 'troop', lat: 1.3540, lng: 103.8200, color: 'blue' },
-            { id: 'so-1', name: 'Safety Officer', role: 'safety', lat: 1.3525, lng: 103.8180, color: 'green' }
-        ];
+        // 1. Correct CDN imports for plain HTML files
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+        import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+
+        // 2. Your exact Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJhdIYFQr0GAKlYgHpDpl_cmwCoC1uZz0",
+            authDomain: "seer-fe56b.firebaseapp.com",
+            projectId: "seer-fe56b",
+            storageBucket: "seer-fe56b.firebasestorage.app",
+            messagingSenderId: "296221691441",
+            appId: "1:296221691441:web:4ef925530e069d0b598f10",
+            measurementId: "G-V1YJ1Z5YKL"
+        };
+
+        // 3. Initialise Firebase and Firestore
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const markers = {};
 
         const createIcon = (color) => {
             return L.divIcon({
@@ -82,13 +89,39 @@
             });
         };
 
-        activeUnits.forEach(unit => {
-            const mappedColor = unit.role === 'safety' ? '#22c55e' : (unit.role === 'conducting' ? '#eab308' : '#3b82f6');
-            L.marker([unit.lat, unit.lng], { icon: createIcon(mappedColor) })
-                .addTo(map)
-                .bindPopup(`<b>${unit.name}</b>`);
-        });
+        // 4. Real-time Database Listener (Replaces the old activeUnits loop)
+        onSnapshot(collection(db, "active_units"), (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                const data = change.doc.data();
+                const id = change.doc.id;
+                
+                // Determine colour based on role
+                const mappedColor = data.role === 'safety' ? '#22c55e' : (data.role === 'conducting' ? '#eab308' : '#3b82f6');
 
+                if (change.type === "added" || change.type === "modified") {
+                    // If marker exists, move it. If not, create it!
+                    if (markers[id]) {
+                        markers[id].setLatLng([data.lat, data.lng]);
+                    } else {
+                        markers[id] = L.marker([data.lat, data.lng], { icon: createIcon(mappedColor) })
+                            .addTo(map)
+                            .bindPopup(`<b>${data.name}</b>`);
+                        
+                        // Automatically pan map to the first person who connects
+                        if (Object.keys(markers).length === 1) {
+                            map.setView([data.lat, data.lng], 16);
+                        }
+                    }
+                }
+                
+                if (change.type === "removed") {
+                    if (markers[id]) {
+                        map.removeLayer(markers[id]);
+                        delete markers[id];
+                    }
+                }
+            });
+        });
     </script>
 </body>
 </html>
