@@ -4,23 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BMS Tactical Map</title>
-    <!-- Telegram Web App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        .leaflet-layer, .leaflet-control-zoom-in, .leaflet-control-zoom-out, .leaflet-control-attribution {
+        /* Base tactical map styling */
+        .tactical-theme .leaflet-layer, 
+        .tactical-theme .leaflet-control-zoom-in, 
+        .tactical-theme .leaflet-control-zoom-out, 
+        .tactical-theme .leaflet-control-attribution {
             filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
         }
         body { overscroll-behavior-y: contain; }
+        
+        /* SOS Flashing Animation */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .sos-beacon div {
+            background-color: #ef4444 !important; /* Force red */
+            animation: pulse-red 1.5s infinite;
+            border: 3px solid white !important;
+            width: 20px !important;
+            height: 20px !important;
+            margin-top: -3px;
+            margin-left: -3px;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white h-screen flex flex-col font-sans overflow-hidden">
 
-    <header class="bg-gray-800 p-3 shadow-md flex justify-between items-center border-b border-gray-700">
+    <header class="bg-gray-800 p-3 shadow-md flex justify-between items-center border-b border-gray-700 z-20 relative">
         <div class="flex items-center space-x-2">
-            <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+            <div class="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" id="status-indicator"></div>
             <h1 class="text-lg font-bold tracking-wider text-gray-100">BMS <span class="text-xs font-normal text-gray-400">| LIVE</span></h1>
         </div>
         <div class="flex space-x-2 text-xs">
@@ -28,43 +47,25 @@
         </div>
     </header>
 
-    <main class="flex-1 relative w-full h-full">
+    <main class="flex-1 relative w-full h-full tactical-theme" id="map-container">
         <div id="map" class="w-full h-full z-0"></div>
         
-        <div class="absolute bottom-4 right-4 z-10 bg-gray-800/90 p-2 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm">
-            <div class="flex flex-col space-y-1 text-xs">
-                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span> Platoon</div>
+        <div class="absolute bottom-4 right-4 z-10 bg-gray-800/90 p-2 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm pointer-events-none">
+            <div class="flex flex-col space-y-1 text-xs font-mono">
+                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span> Troop</div>
                 <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Safety</div>
-                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span> Conducting</div>
+                <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-yellow-500 mr-2"></span> Cond/OIC</div>
+                <div class="flex items-center mt-1 pt-1 border-t border-gray-600 text-red-400"><span class="w-2 h-2 rounded-full bg-red-500 mr-2 animate-pulse"></span> EMERGENCY</div>
             </div>
         </div>
     </main>
 
     <script type="module">
-        // Initialise Telegram Web App features
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Expands the Mini App to take up the whole screen
-
-        // Set tactical clock
-        setInterval(() => {
-            const now = new Date();
-            document.getElementById('clock').innerText = now.toLocaleTimeString('en-GB', { hour12: false }) + ' hrs';
-        }, 1000);
-
-        // Initialize Map (Centred around a generic Singapore training area)
-        const map = L.map('map').setView([1.3521, 103.8198], 13);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
-
-        // 1. Correct CDN imports for plain HTML files
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
         import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
 
-        // 2. Your exact Firebase config
         const firebaseConfig = {
+            // YOUR CONFIG HERE
             apiKey: "AIzaSyCJhdIYFQr0GAKlYgHpDpl_cmwCoC1uZz0",
             authDomain: "seer-fe56b.firebaseapp.com",
             projectId: "seer-fe56b",
@@ -74,43 +75,87 @@
             measurementId: "G-V1YJ1Z5YKL"
         };
 
-        // 3. Initialise Firebase and Firestore
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        window.Telegram.WebApp.expand(); 
+
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('en-GB', { hour12: false }) + ' hrs';
+        }, 1000);
+
+        // --- MAP SETUP WITH TOGGLE ---
+        const map = L.map('map').setView([1.3521, 103.8198], 13);
+
+        const tacticalLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+        
+        // Esri World Imagery (Satellite)
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' });
+
+        tacticalLayer.addTo(map);
+
+        // Map Control Box
+        const baseMaps = {
+            "Tactical View": tacticalLayer,
+            "Satellite View": satelliteLayer
+        };
+        L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
+
+        // Remove the tactical CSS inversion filter when Satellite is selected
+        map.on('baselayerchange', function(e) {
+            const container = document.getElementById('map-container');
+            if (e.name === "Satellite View") {
+                container.classList.remove('tactical-theme');
+            } else {
+                container.classList.add('tactical-theme');
+            }
+        });
+        // ------------------------------
+
         const markers = {};
 
-        const createIcon = (color) => {
+        const createIcon = (color, isSos) => {
+            let extraClass = isSos ? 'sos-beacon' : '';
             return L.divIcon({
-                className: 'custom-div-icon',
+                className: `custom-div-icon ${extraClass}`,
                 html: `<div style="background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
                 iconSize: [14, 14],
                 iconAnchor: [7, 7]
             });
         };
 
-        // 4. Real-time Database Listener (Replaces the old activeUnits loop)
+        // Real-time Database Listener
         onSnapshot(collection(db, "active_units"), (snapshot) => {
+            
+            // Check if map is wiped (ENDEX)
+            if (snapshot.empty) {
+                document.getElementById('status-indicator').classList.replace('bg-red-500', 'bg-green-500'); // All clear
+            }
+
             snapshot.docChanges().forEach((change) => {
                 const data = change.doc.data();
                 const id = change.doc.id;
                 
-                // Determine colour based on role
                 const mappedColor = data.role === 'safety' ? '#22c55e' : (data.role === 'conducting' ? '#eab308' : '#3b82f6');
+                const isEmergency = data.sos === true;
+
+                if (isEmergency) {
+                    document.getElementById('status-indicator').classList.replace('bg-green-500', 'bg-red-500');
+                }
 
                 if (change.type === "added" || change.type === "modified") {
-                    // If marker exists, move it. If not, create it!
                     if (markers[id]) {
+                        // Update position and icon (in case they triggered SOS)
                         markers[id].setLatLng([data.lat, data.lng]);
+                        markers[id].setIcon(createIcon(mappedColor, isEmergency));
                     } else {
-                        markers[id] = L.marker([data.lat, data.lng], { icon: createIcon(mappedColor) })
+                        // Create new marker
+                        markers[id] = L.marker([data.lat, data.lng], { icon: createIcon(mappedColor, isEmergency) })
                             .addTo(map)
-                            .bindPopup(`<b>${data.name}</b>`);
+                            .bindPopup(`<b>${data.name}</b><br><span class="text-xs text-gray-500">${data.role.toUpperCase()}</span>`);
                         
-                        // Automatically pan map to the first person who connects
-                        if (Object.keys(markers).length === 1) {
-                            map.setView([data.lat, data.lng], 16);
-                        }
+                        if (Object.keys(markers).length === 1) map.setView([data.lat, data.lng], 16);
                     }
                 }
                 
